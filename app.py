@@ -201,6 +201,28 @@ def analyze_user():
 
     user_emotion_profile = "\n".join(lines[1:]).strip()
 
+    # ✅ Save to DB
+    try:
+        connection = pymysql.connect(**DB_CONFIG)
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                INSERT INTO user_emotions (username, emotion)
+                VALUES (%s, %s)
+                """,
+                (username, json.dumps({
+                    "predicted_emoji_id": emoji_id,
+                    "health_factors": health_result,
+                    "behavior_factors": behavior_result,
+                    "user_emotion_profile": user_emotion_profile
+                }))
+            )
+            connection.commit()
+    except Exception as e:
+        return jsonify({"error": f"DB insert failed: {e}"}), 500
+    finally:
+        connection.close()
+
     return jsonify({
         "predicted_emoji_id": emoji_id,
         "health_factors": health_result,
