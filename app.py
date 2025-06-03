@@ -18,7 +18,30 @@ DB_CONFIG = {
 
 # ✅ Groq API Config
 GROQ_API_KEY = "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"
-GROQ_MODEL = "llama-3.1-8b-instant"  # Reasoning-capable and cost-efficient model
+GROQ_MODEL = "llama-3.1-8b-instant"
+
+# ✅ Emoji Map
+EMOJI_MAP = {
+    1: "angry", 2: "anguished", 3: "anxios-with-sweat", 4: "astonished", 5: "bandage-face",
+    6: "big-frown", 7: "blush", 8: "cold-face", 9: "concerned", 10: "cry",
+    11: "cursing", 12: "Diagonal-mouth", 13: "distraught", 14: "dizzy-face", 15: "drool",
+    16: "exhale", 17: "expressionless", 18: "flushed", 19: "frown", 20: "gasp",
+    21: "grimacing", 22: "grin-sweat", 23: "grin", 24: "grinning", 25: "hand-over-mouth",
+    26: "happy-cry", 27: "head-nod", 28: "head-shake", 29: "heart-eyes", 30: "heart-face",
+    31: "holding-back-tears", 32: "hot-face", 33: "hug-face", 34: "joy", 35: "kissing-closed-eyes",
+    36: "kissing-heart", 37: "kissing-smile", 38: "kissing", 39: "laughing", 40: "loudly-crying",
+    41: "melting", 42: "mind-blown", 43: "monocle", 44: "mouth-none", 45: "mouth-open",
+    46: "neutral-face", 47: "partying-face", 48: "peeking", 49: "pensive", 50: "pleading",
+    51: "rage", 52: "raised-eyebrow", 53: "relieved", 54: "rofl", 55: "rolling-eyes",
+    56: "sad", 57: "scared", 58: "screaming", 59: "scrunched-eyes", 60: "scrunched-mouth",
+    61: "shaking-face", 62: "shushing-face", 63: "sick", 64: "similing-eyes-with-hand-over-mouth", 65: "sleep",
+    66: "sleepy", 67: "slightly-frowning", 68: "slightly-happy", 69: "smile-with-big-eyes", 70: "smile",
+    71: "smirk", 72: "sneeze", 73: "squinting-tongue", 74: "star-struck", 75: "stick-out-tounge",
+    76: "surprised", 77: "sweat", 78: "thermometer-face", 79: "thinking-face", 80: "tired",
+    81: "triumph", 82: "unamused", 83: "upside-down-face", 84: "vomit", 85: "warm-smile",
+    86: "weary", 87: "wink", 88: "winky-tongue", 89: "woozy", 90: "worried",
+    91: "x-eyes", 92: "yawn", 93: "yum", 94: "zany-face", 95: "zipper-face"
+}
 
 # ✅ Flask App Setup
 app = Flask(__name__)
@@ -34,9 +57,6 @@ def fetch_concatenated_health_data(username):
                 (username,)
             )
             rows = cursor.fetchall()
-            if not rows:
-                return f"No health data found for user '{username}'."
-
             result = []
             for row in rows:
                 created = row.get("created_at", "")
@@ -46,7 +66,6 @@ def fetch_concatenated_health_data(username):
                     result.append(f"{created} → {flattened}")
                 except json.JSONDecodeError:
                     result.append(f"{created} → ❌ Invalid JSON")
-
             return "\n".join(result)
     finally:
         connection.close()
@@ -137,16 +156,19 @@ Behavior Log:
 """
 
 def build_classification_prompt(health_log, behavior_log):
+    emoji_reference = "\n".join([f"{k}: {v}" for k, v in EMOJI_MAP.items()])
     return f"""
-Given the following health and behavior logs, classify the user's most likely emotional state as one of the following emojis:
-1–95, mapped by emojiMap index. Respond with the emoji name and ID only in the first line, like:
+Choose the user's emotional state from the following list (ID: emoji):
+{emoji_reference}
+
+Avoid using generic or low-engagement emojis like 'neutral-face'. Choose expressive and emotionally meaningful states.
+
+Respond with the ID and emoji name only on the first line, like:
 ID: 33 (joy)
 
-⚠️ Important: Avoid choosing generic or low-engagement emojis like 'neutral-face'. Choose expressive and emotionally significant states instead.
-
-Then, provide:
-- 4–5 bullet points supporting why this emoji fits.
-- 2–3 bullet points explaining why it might not fully match.
+Then add:
+- 4–5 bullet points supporting the classification.
+- 2–3 reasons why it may not fully fit.
 
 Health Log:
 {health_log}
@@ -189,7 +211,6 @@ def analyze_user():
     behavior_result = analyze_prompt(build_behavior_prompt(behavior_log))
     classification_result = analyze_prompt(build_classification_prompt(health_log, behavior_log))
 
-    # Extract emoji ID from the first line like 'ID: 33 (joy)'
     lines = classification_result.strip().splitlines()
     first_line = lines[0]
     emoji_id = None
@@ -201,7 +222,6 @@ def analyze_user():
 
     user_emotion_profile = "\n".join(lines[1:]).strip()
 
-    # ✅ Save to DB
     try:
         connection = pymysql.connect(**DB_CONFIG)
         with connection.cursor() as cursor:
