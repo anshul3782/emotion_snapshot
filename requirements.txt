@@ -1,6 +1,6 @@
 flask
 flask_cors
 pymysql
-guinicorn
+gunicorn
 requests
 datetime
