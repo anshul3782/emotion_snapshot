@@ -17,7 +17,7 @@ DB_CONFIG = {
 }
 
 # ✅ Groq API Config
-GROQ_API_KEY = "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"
+GROQ_API_KEY = "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"
 GROQ_MODEL = "llama-3.1-8b-instant"
 
 # ✅ Emoji Map
