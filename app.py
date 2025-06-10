@@ -132,43 +132,55 @@ def get_user_behavior(email):
 # ✅ Prompt Builders
 def build_health_prompt(log):
     return f"""
-You're a health signal extractor. Do NOT analyze or predict emotions.
-Extract data relevant to emotional states like stress, fatigue, or anxiety — WITHOUT inferring emotions.
+You are a health data extractor. 
+ONLY extract factual, measurable data related to stress, fatigue, or anxiety. 
+DO NOT infer, explain, or mention emotions.
+
+Format the output as a clean, indented list:
+  key: value
 
 Health Log:
 {log}
 
-- Emotion-Relevant Data Points:
-  • <key>: <value>
+Extracted Data:
 """
 
 def build_behavior_prompt(log):
     return f"""
-You're an expert in behavioral analysis.
-Summarize behavioral patterns, flags, and habits — DO NOT infer mood/emotion.
+You are a behavioral data extractor.
+ONLY extract observable patterns, habits, and flags. Do NOT infer or mention emotions or mood.
+Output as a short, indented list under each category, with no extra text.
 
 Behavior Log:
 {log}
 
-- 🔄 Habits:
-- ⚠️ Flags:
-- 🧠 Traits:
+Habits:
+  - 
+Flags:
+  - 
+Traits:
+  - 
 """
+
 
 def build_classification_prompt(health_log, behavior_log):
     emoji_reference = "\n".join([f"{k}: {v}" for k, v in EMOJI_MAP.items()])
     return f"""
-Choose the user's emotional state from the following list (ID: emoji):
+Select the user's emotional state from the list below (ID: emoji):
 {emoji_reference}
 
-Avoid using generic or low-engagement emojis like 'neutral-face'. Choose expressive and emotionally meaningful states.
+- Avoid 'neutral-face' and generic emojis. Choose the most expressive, specific state.
+- Reply in this format only:
 
-Respond with the ID and emoji name only on the first line, like:
-ID: 33 (joy)
-
-Then add:
-- 4–5 bullet points supporting the classification.
-- 2–3 reasons why it may not fully fit.
+ID: <number> (<emoji_name>)
+Support:
+  - 
+  - 
+  - 
+  - 
+Limitations:
+  - 
+  - 
 
 Health Log:
 {health_log}
@@ -176,6 +188,7 @@ Health Log:
 Behavior Log:
 {behavior_log}
 """
+
 
 # ✅ Groq call
 def analyze_prompt(prompt):
