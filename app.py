@@ -385,27 +385,17 @@ Reasons:
     label = re.search(r'Label: ([^\n]+)', result)
     reasons = re.findall(r'- (.+)', result)
 
-emotion_data = {
+    return jsonify({
         "username": username,
         "emotion_id": int(emotion_id.group(1)) if emotion_id else None,
         "label": label.group(1) if label else None,
         "reasons": reasons
-    }
+    })
 
-    # Save JSON to DB
-    connection = pymysql.connect(**DB_CONFIG)
-    try:
-        with connection.cursor() as cursor:
-            cursor.execute("""
-                INSERT INTO user_emotions (username, emotion, json_data, created_at)
-                VALUES (%s, %s, %s, NOW())
-            """, (username, emotion_data["label"], json.dumps(emotion_data)))
-        connection.commit()
-    finally:
-        connection.close()
-return emotion_data
+
+
+
 
 
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
-
