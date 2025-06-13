@@ -328,26 +328,29 @@ def analyze_user():
     finally:
         connection.close()
 
-    # Step 2: Run summaries
+    # Step 2: Try getting all 4 components
     weather = get_weather_emotion_report(lat, lon)
     satellite = analyze_satellite_image(lat, lon)
     behavioral_analysis = summarize_behavior_data(username)
     health_summary = summarize_health_by_username(username)
 
-    # Step 3: Build prompt
-    final_prompt = f"""You are analyzing the likely emotion of user '{username}' using structured signals.
+    # Step 3: Check if all are missing
+    if not any([weather, satellite, behavioral_analysis, health_summary]):
+        return jsonify({"error": "No usable data found to analyze emotion."}), 400
 
-## 🧠 PRIORITY 1: Behavioral Patterns (most weight)
-{behavioral_analysis}
+    # Step 4: Build dynamic prompt
+    final_prompt = f"""You are analyzing the likely emotion of user '{username}' using structured signals.\n"""
 
-## 💓 PRIORITY 2: Apple Health Signals (moderate weight)
-{health_summary}
+    if behavioral_analysis:
+        final_prompt += f"\n## 🧠 PRIORITY 1: Behavioral Patterns (most weight)\n{behavioral_analysis}"
+    if health_summary:
+        final_prompt += f"\n\n## 💓 PRIORITY 2: Apple Health Signals (moderate weight)\n{health_summary}"
+    if satellite:
+        final_prompt += f"\n\n## 🛰️ PRIORITY 3: Satellite Terrain (low weight)\n{satellite}"
+    if weather:
+        final_prompt += f"\n\n## 🌦️ PRIORITY 4: Weather Conditions (lowest weight)\n{weather}"
 
-## 🛰️ PRIORITY 3: Satellite Terrain (low weight)
-{satellite}
-
-## 🌦️ PRIORITY 4: Weather Conditions (lowest weight)
-{weather}
+    final_prompt += f"""
 
 ---
 
@@ -376,10 +379,8 @@ Reasons:
 - <optional reason 9>
 """
 
-    # Step 4: Get and parse result
+    # Step 5: Parse LLM output
     result = call_groq_chat(GROQ_API_KEY, GROQ_MODEL, final_prompt)
-
-    # Extract components using regex
     emotion_id = re.search(r'Emotion ID: (\d+)', result)
     label = re.search(r'Label: ([^\n]+)', result)
     reasons = re.findall(r'- (.+)', result)
@@ -390,6 +391,7 @@ Reasons:
         "label": label.group(1) if label else None,
         "reasons": reasons
     })
+
 
 
 
