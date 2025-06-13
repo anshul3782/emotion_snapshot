@@ -15,7 +15,7 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 
 # Set up OpenAI client
-client = openai.OpenAI(api_key="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")
+client = openai.OpenAI(api_key=os.environ.get("OPENAI_API_KEY"))
 GROQ_API_KEY = "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"
 GROQ_MODEL = "llama3-70b-8192"
 DB_CONFIG = {
