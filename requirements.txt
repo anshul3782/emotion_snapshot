@@ -5,4 +5,3 @@ pymysql
 flask
 flask-cors
 gunicorn
-os
