@@ -304,6 +304,10 @@ import re
 
 @app.route('/analyze_user', methods=['POST'])
 def analyze_user():
+    import json
+    import re
+    import pymysql
+
     data = request.get_json()
     username = data.get("username")
     if not username:
@@ -328,19 +332,18 @@ def analyze_user():
     finally:
         connection.close()
 
-    # Step 2: Try getting all 4 components
+    # Step 2: Fetch supporting signals
     weather = get_weather_emotion_report(lat, lon)
     satellite = analyze_satellite_image(lat, lon)
     behavioral_analysis = summarize_behavior_data(username)
     health_summary = summarize_health_by_username(username)
 
-    # Step 3: Check if all are missing
+    # Step 3: Validate at least one data point
     if not any([weather, satellite, behavioral_analysis, health_summary]):
         return jsonify({"error": "No usable data found to analyze emotion."}), 400
 
     # Step 4: Build dynamic prompt
-    final_prompt = f"""You are analyzing the likely emotion of user '{username}' using structured signals.\n"""
-
+    final_prompt = f"You are analyzing the likely emotion of user '{username}' using structured signals.\n"
     if behavioral_analysis:
         final_prompt += f"\n## 🧠 PRIORITY 1: Behavioral Patterns (most weight)\n{behavioral_analysis}"
     if health_summary:
@@ -379,18 +382,36 @@ Reasons:
 - <optional reason 9>
 """
 
-    # Step 5: Parse LLM output
+    # Step 5: Call LLM and parse response
     result = call_groq_chat(GROQ_API_KEY, GROQ_MODEL, final_prompt)
     emotion_id = re.search(r'Emotion ID: (\d+)', result)
     label = re.search(r'Label: ([^\n]+)', result)
     reasons = re.findall(r'- (.+)', result)
 
-    return jsonify({
+    # Build result JSON
+    emotion_data = {
         "username": username,
         "emotion_id": int(emotion_id.group(1)) if emotion_id else None,
         "label": label.group(1) if label else None,
         "reasons": reasons
-    })
+    }
+
+    # Step 6: Store in user_emotions
+    connection = pymysql.connect(**DB_CONFIG)
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute("""
+                INSERT INTO user_emotions (username, emotion)
+                VALUES (%s, %s,)
+            """, (
+                username,
+                json.dumps(emotion_data)
+            ))
+        connection.commit()
+    finally:
+        connection.close()
+
+    return jsonify(emotion_data)
 
 
 
