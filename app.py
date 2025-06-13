@@ -1,11 +1,23 @@
+import requests
+import openai
+import base64
+from PIL import Image
+from io import BytesIO
 import pymysql
 import json
-import requests
 from datetime import datetime
-from flask import Flask, request, jsonify
 from flask_cors import CORS
+from flask import Flask, request, jsonify
+# Initialize Flask App
+app = Flask(__name__)
 
-# ✅ DB Config
+# ✅ Enable CORS for all routes
+CORS(app, resources={r"/*": {"origins": "*"}})
+
+# Set up OpenAI client
+client = openai.OpenAI(api_key="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")
+GROQ_API_KEY = "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"
+GROQ_MODEL = "llama3-70b-8192"
 DB_CONFIG = {
     'host': 'db-mysql-nyc3-54076-do-user-19716193-0.k.db.ondigitalocean.com',
     'user': 'doadmin',
@@ -15,12 +27,6 @@ DB_CONFIG = {
     'ssl': {'ssl': {}},
     'cursorclass': pymysql.cursors.DictCursor
 }
-
-# ✅ Groq API Config
-GROQ_API_KEY = "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"
-GROQ_MODEL = "llama-3.1-8b-instant"
-
-# ✅ Emoji Map
 EMOJI_MAP = {
     1: "angry", 2: "anguished", 3: "anxios-with-sweat", 4: "astonished", 5: "bandage-face",
     6: "big-frown", 7: "blush", 8: "cold-face", 9: "concerned", 10: "cry",
@@ -43,11 +49,7 @@ EMOJI_MAP = {
     91: "x-eyes", 92: "yawn", 93: "yum", 94: "zany-face", 95: "zipper-face"
 }
 
-# ✅ Flask App Setup
-app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
 
-# ✅ Fetch and format Apple Health data
 def fetch_concatenated_health_data(username):
     connection = pymysql.connect(**DB_CONFIG)
     try:
@@ -70,7 +72,22 @@ def fetch_concatenated_health_data(username):
     finally:
         connection.close()
 
-# ✅ Fetch and format app usage data
+def build_health_prompt(log):
+    return f"""
+You are a health data extractor. 
+ONLY extract factual, measurable data related to stress, fatigue, or anxiety. 
+DO NOT infer, explain, or mention emotions.
+
+Format the output as a clean, indented list:
+  key: value
+
+Health Log:
+{log}
+
+Extracted Data:
+"""
+
+
 def get_user_behavior(email):
     connection = pymysql.connect(**DB_CONFIG)
     try:
@@ -129,22 +146,6 @@ def get_user_behavior(email):
     finally:
         connection.close()
 
-# ✅ Prompt Builders
-def build_health_prompt(log):
-    return f"""
-You are a health data extractor. 
-ONLY extract factual, measurable data related to stress, fatigue, or anxiety. 
-DO NOT infer, explain, or mention emotions.
-
-Format the output as a clean, indented list:
-  key: value
-
-Health Log:
-{log}
-
-Extracted Data:
-"""
-
 def build_behavior_prompt(log):
     return f"""
 You are a behavioral data extractor.
@@ -162,44 +163,106 @@ Traits:
   - 
 """
 
-
-def build_classification_prompt(health_log, behavior_log):
-    emoji_reference = "\n".join([f"{k}: {v}" for k, v in EMOJI_MAP.items()])
-    return f"""
-Select the user's emotional state from the list below (ID: emoji):
-{emoji_reference}
-
-- Avoid 'neutral-face' and generic emojis. Choose the most expressive, specific state.
-- Reply in this format only:
-
-ID: <number> (<emoji_name>)
-Support:
-  - 
-  - 
-  - 
-  - 
-Limitations:
-  - 
-  - 
-
-Health Log:
-{health_log}
-
-Behavior Log:
-{behavior_log}
-"""
+# Groq API credentials
+GROQ_API_KEY = "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"
+GROQ_MODEL = "llama3-70b-8192"
 
 
-# ✅ Groq call
-def analyze_prompt(prompt):
+def get_weather_emotion_report(lat, lon):
+    API_KEY = "011501207ff84544b5b141025251206"
+    url = f"http://api.weatherapi.com/v1/current.json?key={API_KEY}&q={lat},{lon}"
+    response = requests.get(url)
+    data = response.json()
+
+    localtime = data['location']['localtime']
+    current = data['current']
+
+    weather = {
+        "temp_c": current["temp_c"],
+        "feelslike_c": current["feelslike_c"],
+        "heatindex_c": current.get("heatindex_c", current["feelslike_c"]),
+        "windchill_c": current.get("windchill_c", current["feelslike_c"]),
+        "condition": current["condition"]["text"],
+        "cloud": current["cloud"],
+        "vis_km": current["vis_km"],
+        "humidity": current["humidity"],
+        "dewpoint_c": current["dewpoint_c"],
+        "precip_mm": current["precip_mm"],
+        "wind_kph": current["wind_kph"],
+        "gust_kph": current["gust_kph"],
+        "wind_dir": current["wind_dir"],
+        "uv": current["uv"],
+        "pressure_mb": current["pressure_mb"]
+    }
+
+    result = f"🕒 Local Time: {localtime}\n"
+
+    result += "\n🌡️ Temperature-Related\n"
+    result += f"  - temp_c / feelslike_c: {weather['temp_c']}°C / {weather['feelslike_c']}°C → {'Irritability' if weather['temp_c'] > 30 else 'Comfort'}\n"
+    result += f"  - heatindex_c: {weather['heatindex_c']}°C → {'Stressful' if weather['heatindex_c'] - weather['temp_c'] > 3 else 'Normal'}\n"
+    result += f"  - windchill_c: {weather['windchill_c']}°C → {'Discomfort' if weather['windchill_c'] < 10 else 'No effect'}\n"
+
+    result += "\n🌤️ Sky & Visibility\n"
+    result += f"  - condition: {weather['condition']} → {'Neutral' if 'cloud' in weather['condition'].lower() else 'Energizing' if 'sun' in weather['condition'].lower() else 'Gloomy'}\n"
+    result += f"  - cloud: {weather['cloud']}% → {'Dullness' if weather['cloud'] > 70 else 'Clear'}\n"
+    result += f"  - vis_km: {weather['vis_km']} km → {'Clarity' if weather['vis_km'] > 10 else 'Anxiety'}\n"
+
+    result += "\n💧 Moisture & Air\n"
+    result += f"  - humidity: {weather['humidity']}% → {'Irritability' if weather['humidity'] > 70 else 'Dry discomfort' if weather['humidity'] < 30 else 'Neutral'}\n"
+    result += f"  - dewpoint_c: {weather['dewpoint_c']}°C → {'Muggy' if weather['dewpoint_c'] > 20 else 'Comfortable'}\n"
+    result += f"  - precip_mm: {weather['precip_mm']} mm → {'Gloomy' if weather['precip_mm'] > 0 else 'Uplifting'}\n"
+
+    result += "\n💨 Wind & Gusts\n"
+    result += f"  - wind_kph: {weather['wind_kph']} kph → {'Refreshing' if weather['wind_kph'] < 15 else 'Agitating'}\n"
+    result += f"  - gust_kph: {weather['gust_kph']} kph → {'Unease' if weather['gust_kph'] > 20 else 'Stable'}\n"
+    result += f"  - wind_dir: {weather['wind_dir']} → Minimal effect\n"
+
+    result += "\n🌞 UV & Pressure\n"
+    result += f"  - uv: {weather['uv']} → {'Overexposure' if weather['uv'] > 6 else 'Mild stimulation'}\n"
+    result += f"  - pressure_mb: {weather['pressure_mb']} mb → {'Alert and stable' if weather['pressure_mb'] > 1010 else 'Sleepy'}\n"
+
+    return result
+
+
+def analyze_satellite_image(lat, lon):
+    try:
+        map_url = f"https://maps.googleapis.com/maps/api/staticmap?center={lat},{lon}&zoom=17&size=800x800&maptype=satellite&key=AIzaSyCI0GwnC4CerLGK0c7ZestrOO4MyAdQ8oE"
+        response = requests.get(map_url)
+        image = Image.open(BytesIO(response.content)).convert("RGB")
+        buffer = BytesIO()
+        image.save(buffer, format="JPEG")
+        image_bytes = buffer.getvalue()
+        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+
+        ai_response = client.chat.completions.create(
+            model="gpt-4o",
+            messages=[
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": f"Describe this satellite image for the location {lat}, {lon}. Include terrain, man-made structures, vegetation, and visible patterns."},
+                        {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"}}
+                    ]
+                }
+            ],
+            max_tokens=500
+        )
+
+        return ai_response.choices[0].message.content
+
+    except Exception as e:
+        return f"❌ Error analyzing satellite image: {e}"
+
+
+def call_groq_chat(api_key, model, prompt):
     response = requests.post(
         "https://api.groq.com/openai/v1/chat/completions",
         headers={
-            "Authorization": f"Bearer {GROQ_API_KEY}",
+            "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json"
         },
         json={
-            "model": GROQ_MODEL,
+            "model": model,
             "messages": [{"role": "user", "content": prompt}],
             "temperature": 0.3
         }
@@ -209,60 +272,127 @@ def analyze_prompt(prompt):
     except Exception as e:
         return f"❌ Error: {e}\n{response.text}"
 
-# ✅ Flask API Endpoint
+
+
+def summarize_health_by_username(username):
+    raw_log = fetch_concatenated_health_data(username)
+    if not raw_log:
+        return "❌ No health data found for user."
+    prompt = build_health_prompt(raw_log)
+    return call_groq_chat(GROQ_API_KEY, GROQ_MODEL, prompt)
+
+
+def summarize_behavior_data(email):
+    behavior_log = get_user_behavior(email)
+
+
+    prompt = build_behavior_prompt(behavior_log)
+
+
+    summary = call_groq_chat(GROQ_API_KEY, GROQ_MODEL, prompt)
+
+    return summary
+
+# ✅ High-level function that runs everything
+from flask import Flask, request, jsonify
+import pymysql
+
+app = Flask(__name__)
+
+import re
+
 @app.route('/analyze_user', methods=['POST'])
 def analyze_user():
     data = request.get_json()
     username = data.get("username")
     if not username:
-        return jsonify({"error": "Username is required"}), 400
+        return jsonify({"error": "Missing 'username' in request body"}), 400
 
-    health_log = fetch_concatenated_health_data(username)
-    behavior_log = get_user_behavior(username)
-
-    health_result = analyze_prompt(build_health_prompt(health_log))
-    behavior_result = analyze_prompt(build_behavior_prompt(behavior_log))
-    classification_result = analyze_prompt(build_classification_prompt(health_log, behavior_log))
-
-    lines = classification_result.strip().splitlines()
-    first_line = lines[0]
-    emoji_id = None
-    if "ID:" in first_line:
-        try:
-            emoji_id = int(first_line.split("ID:")[1].split()[0])
-        except:
-            emoji_id = None
-
-    user_emotion_profile = "\n".join(lines[1:]).strip()
-
+    # Step 1: Fetch latest location
+    connection = pymysql.connect(**DB_CONFIG)
     try:
-        connection = pymysql.connect(**DB_CONFIG)
         with connection.cursor() as cursor:
-            cursor.execute(
-                """
-                INSERT INTO user_emotions (username, emotion)
-                VALUES (%s, %s)
-                """,
-                (username, json.dumps({
-                    "predicted_emoji_id": emoji_id,
-                    "health_factors": health_result,
-                    "behavior_factors": behavior_result,
-                    "user_emotion_profile": user_emotion_profile
-                }))
-            )
-            connection.commit()
-    except Exception as e:
-        return jsonify({"error": f"DB insert failed: {e}"}), 500
+            cursor.execute("""
+                SELECT latitude, longitude
+                FROM user_location
+                WHERE username = %s
+                ORDER BY created_at DESC
+                LIMIT 1
+            """, (username,))
+            location = cursor.fetchone()
+            if not location:
+                return jsonify({"error": f"No location found for user '{username}'"}), 404
+            lat = location['latitude']
+            lon = location['longitude']
     finally:
         connection.close()
 
+    # Step 2: Run summaries
+    weather = get_weather_emotion_report(lat, lon)
+    satellite = analyze_satellite_image(lat, lon)
+    behavioral_analysis = summarize_behavior_data(username)
+    health_summary = summarize_health_by_username(username)
+
+    # Step 3: Build prompt
+    final_prompt = f"""You are analyzing the likely emotion of user '{username}' using structured signals.
+
+## 🧠 PRIORITY 1: Behavioral Patterns (most weight)
+{behavioral_analysis}
+
+## 💓 PRIORITY 2: Apple Health Signals (moderate weight)
+{health_summary}
+
+## 🛰️ PRIORITY 3: Satellite Terrain (low weight)
+{satellite}
+
+## 🌦️ PRIORITY 4: Weather Conditions (lowest weight)
+{weather}
+
+---
+
+Your task:
+Choose one emotion from this dictionary:
+{EMOJI_MAP}
+
+Instructions:
+- Prioritize top sections more heavily.
+- Do NOT invent or assume anything.
+- Avoid 'neutral-face'.
+- Keep reasons short (max 6–7 words).
+
+Output format:
+Emotion ID: <integer>
+Label: <label from dictionary>
+Reasons:
+- <reason 1>
+- <reason 2>
+- <reason 3>
+- <reason 4>
+- <reason 5>
+- <reason 6>
+- <reason 7>
+- <reason 8>
+- <optional reason 9>
+"""
+
+    # Step 4: Get and parse result
+    result = call_groq_chat(GROQ_API_KEY, GROQ_MODEL, final_prompt)
+
+    # Extract components using regex
+    emotion_id = re.search(r'Emotion ID: (\d+)', result)
+    label = re.search(r'Label: ([^\n]+)', result)
+    reasons = re.findall(r'- (.+)', result)
+
     return jsonify({
-        "predicted_emoji_id": emoji_id,
-        "health_factors": health_result,
-        "behavior_factors": behavior_result,
-        "user_emotion_profile": user_emotion_profile
+        "username": username,
+        "emotion_id": int(emotion_id.group(1)) if emotion_id else None,
+        "label": label.group(1) if label else None,
+        "reasons": reasons
     })
 
-# ✅ Run App
+
+
+
 if __name__ == '__main__':
     app.run(debug=True, port=5000)
+
